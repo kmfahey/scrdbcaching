@@ -7,7 +7,7 @@ import sys
 from logging import Logger
 from MySQLdb.cursors import DictCursor
 from MySQLdb import Connect, Connection
-from scrapygenl import set_up_logging, text2slug
+from scrdbcaching import set_up_logging, text2slug
 
 
 MYSQL_USERNAME: str = decouple.config("MYSQL_USERNAME")
