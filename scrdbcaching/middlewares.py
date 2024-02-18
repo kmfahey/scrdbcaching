@@ -2,19 +2,21 @@
 
 import json
 import logging
-from typing import Any
+import os
+import time
 
 from mysql.connector.cursor import MySQLCursor
 from mysql.connector.pooling import MySQLConnectionPool, PooledMySQLConnection
 from scrapy.crawler import Crawler  # type: ignore[import-untyped]
 from scrapy.exceptions import CloseSpider  # type: ignore[import-untyped]
 from scrapy.http import Request, HtmlResponse  # type: ignore[import-untyped]
-from scrapy import signals, Spider  # type: ignore[import-untyped]
+from scrapy import Spider, signals  # type: ignore[import-untyped]
+from typing import Any
 
 from .spider import UrlSetSpider
 
 
-__all__ = ("DatabaseCachingMiddleware",)
+__all__ = ("DatabaseCachingMiddleware", "RenderingRateLimitingMiddleware")
 
 
 # downloader middleware that checks the database for a record corresponding to
@@ -206,3 +208,45 @@ class DatabaseCachingMiddleware:
             # happens.
             db_cursor.close()
             db_conn.close()
+
+
+# Downloader middleware that activates if the render=True argument is being
+# passed to ScraperAPI via the HTTPS_PROXY username argument. If so it
+# rate-limits requests to ≤3 per second in conformance with ScraperAPI API
+# limits.
+class RenderingRateLimitingMiddleware:
+    hr_min: tuple[int, ...]
+    reqs_this_min: int
+
+    def __init__(self) -> None:
+        self.hr_min = time.localtime()[3:5]
+        self.reqs_this_min = 0
+
+    @classmethod
+    def from_crawler(cls, crawler: Crawler) -> object:
+        return cls()
+
+    def process_request(self, request: Request, spider: Spider) -> None:
+        if "render=True" not in os.environ["HTTPS_PROXY"]:
+            # If "render=True" isn't being sent to ScraperAPI, this method
+            # should be a no-op.
+            return
+        time_tuple1: tuple[int, ...] = time.localtime()
+        if self.hr_min != time_tuple1[3:5]:
+            # This object's state is stale. Update the hour-and-minute stamp and
+            # reset the requests counter.
+            self.hr_min = time_tuple1[3:5]
+            self.reqs_this_min = 0
+        elif self.reqs_this_min >= 3:
+            # The state applies to this minute, and there's been 3+ connections
+            # this minute. sleep() until next minute.
+            time.sleep(60 - time_tuple1[5])
+            # Update the hour-and-minute stamp and reset the requests counter.
+            # Since it's a new minute a new call to time.localtime() is needed.
+            self.hr_min = time.localtime()[3:5]
+            self.reqs_this_min = 0
+        else:
+            # The state isn't stale and there's been less than 3 requests this
+            # minute. No need to rate-limit but increment the requests counter.
+            self.reqs_this_min += 1
+        return None
