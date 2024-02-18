@@ -1,5 +1,13 @@
 #!/usr/bin/bash -x
 
+# Initial check for the -r flag and adjustment of positional parameters
+if [ "$1" = "-r" ]; then
+    SCR_USER_ARG="scraperapi.render=true"
+    shift # Shift the arguments to the left, so $2 becomes $1, $3 becomes $2, etc.
+else
+    SCR_USER_ARG="scraperapi"
+fi
+
 # Check if .env file exists
 if [ ! -f ".env" ]; then
     echo "Error: .env file not found in the current directory."
@@ -8,7 +16,7 @@ fi
 
 # Check if the number of arguments is either 3 or 4
 if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
-    echo "Usage: $0 <True|False> <start_integer> <end_integer> [jobdir_path]"
+    echo "Usage: $0 [-r] <True|False> <start_integer> <end_integer> [jobdir_path]"
     exit 1
 fi
 
@@ -40,8 +48,8 @@ if [ -z "$SCR_API_KEY" ]; then
     exit 1
 fi
 
-export HTTP_PROXY="http://scraperapi:${SCR_API_KEY}@proxy-server.scraperapi.com:8001/"
-export HTTPS_PROXY="http://scraperapi:${SCR_API_KEY}@proxy-server.scraperapi.com:8001/"
+export HTTP_PROXY="http://$SCR_USER_ARG:${SCR_API_KEY}@proxy-server.scraperapi.com:8001/"
+export HTTPS_PROXY="http://$SCR_USER_ARG:${SCR_API_KEY}@proxy-server.scraperapi.com:8001/"
 
 # Conditional command execution based on the presence of the fourth argument
 if [ -n "$4" ]; then
@@ -49,3 +57,4 @@ if [ -n "$4" ]; then
 else
     scrapy crawl propertyrecords -a "start_with_tacoma=$1" -a "credits_used=$2" -a "credits_threshold=$3" 2>&1 | tee -a countyoffice_spider.log
 fi
+
